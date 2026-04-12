@@ -1,0 +1,20 @@
+# Q3 Case (b) - One supported column + one disconnected floating column
+# Left column (elem 1): node 1 fixed, node 2 free
+# Right column (elem 2): node 3 and node 4, NO support → floating
+# Disconnected component with no restraint
+TITLE
+Q3(b) Disconnected Floating Member
+NODES 4
+1  0.0  0.0
+2  0.0  4.0
+3  5.0  0.0
+4  5.0  4.0
+MATERIALS 1
+1  0.02  0.08  200000.0
+ELEMENTS 2
+1  1  2  1  FRAME
+2  3  4  1  FRAME
+SUPPORTS 1
+1  1  1  1
+LOADS 1
+2  10.0  -5.0  0.0

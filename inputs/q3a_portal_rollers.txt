@@ -1,0 +1,21 @@
+# Q3 Case (a) - Portal frame on two roller supports
+# Both supports are rollers (only Ty restrained)
+# NO horizontal restraint → sway mechanism
+TITLE
+Q3(a) Portal Frame on Rollers (Mechanism)
+NODES 4
+1  0.0  0.0
+2  0.0  4.0
+3  6.0  4.0
+4  6.0  0.0
+MATERIALS 1
+1  0.02  0.08  200000.0
+ELEMENTS 3
+1  1  2  1  FRAME
+2  2  3  1  FRAME
+3  4  3  1  FRAME
+SUPPORTS 2
+1  0  1  0
+4  0  1  0
+LOADS 1
+2  10.0  0.0  0.0

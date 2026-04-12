@@ -1,0 +1,20 @@
+# Q3 Case (d) - Two-bar triangular truss
+# Nodes at base: 1 (0,0) and 3 (6,0), both pinned
+# Apex node 2 at (3,4), loaded downward
+# TRUSS elements only → DofManager auto-omits Rz at all nodes
+TITLE
+Q3(d) Two-Bar Truss
+NODES 3
+1  0.0  0.0
+2  3.0  4.0
+3  6.0  0.0
+MATERIALS 1
+1  0.01  0.0001  200000.0
+ELEMENTS 2
+1  1  2  1  TRUSS
+2  2  3  1  TRUSS
+SUPPORTS 2
+1  1  1  0
+3  1  1  0
+LOADS 1
+2  0.0  -12.0  0.0

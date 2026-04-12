@@ -1,0 +1,10 @@
+======================================================================
+  2D Structural Analysis — Q3(b) Disconnected Floating Member
+======================================================================
+
+── Step A: Input ──
+  Nodes: 4, Elements: 2 (frame: 2, truss: 0)
+  Materials: 1, Supports: 1, Nodal loads: 1
+
+── Step B: Equation Numbering ──
+  ERROR: Disconnected component [3, 4] has no supports — rigid-body motion, stiffness matrix is singular.

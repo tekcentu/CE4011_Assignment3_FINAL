@@ -1,0 +1,28 @@
+# Q3 Case (e) - Two-span beam with INTERNAL hinge
+# 4 nodes: 1(0,0), 2(5,0), 3(8,0), 4(12,0)
+# Supports: pin at 1, roller at 2, roller at 4
+# Node 3 is NOT a support - it is where the internal hinge is
+# Hinge: release_j on elem 2 AND release_i on elem 3
+# This creates a true internal hinge at node 3, mid-span between supports 2 and 4
+# Element 1 has UDL, Element 3 has point load
+TITLE
+Q3(e) Two-Span Beam with Internal Hinge
+NODES 4
+1  0.0  0.0
+2  5.0  0.0
+3  8.0  0.0
+4  12.0  0.0
+MATERIALS 1
+1  0.02  0.08  200000.0
+ELEMENTS 3
+1  1  2  1  FRAME
+2  2  3  1  FRAME  END
+3  3  4  1  FRAME  START
+SUPPORTS 3
+1  1  1  0
+2  0  1  0
+4  0  1  0
+MEMBER_UDL 1
+1  0.0  -10.0
+MEMBER_POINT_LOADS 1
+3  2.0  0.0  -15.0

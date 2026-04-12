@@ -1,0 +1,24 @@
+# Q3 Case (c) - Two independent sub-structures
+# Left beam: nodes 1-2, pin at node 1, roller at node 2
+# Right beam: nodes 3-4, pin at node 3, roller at node 4
+# They share NO connection → disconnected but both supported
+# Program should warn about independent components
+TITLE
+Q3(c) Disconnected Supported Sub-Structures
+NODES 4
+1  0.0  0.0
+2  4.0  0.0
+3  6.0  0.0
+4  10.0  0.0
+MATERIALS 1
+1  0.02  0.08  200000.0
+ELEMENTS 2
+1  1  2  1  FRAME
+2  3  4  1  FRAME
+SUPPORTS 4
+1  1  1  0
+2  0  1  0
+3  1  1  0
+4  0  1  0
+LOADS 1
+2  0.0  -20.0  0.0

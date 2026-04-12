@@ -1,0 +1,69 @@
+======================================================================
+  2D Structural Analysis — Q3(d) Two-Bar Truss
+======================================================================
+
+── Step A: Input ──
+  Nodes: 3, Elements: 2 (frame: 0, truss: 2)
+  Materials: 1, Supports: 2, Nodal loads: 1
+
+── Step B: Equation Numbering ──
+  Active DOFs: 6, Free DOFs (NumEq): 2
+
+  E matrix (equation numbers):
+    Node      Tx      Ty      Rz
+       1       0       0       0
+       2       1       2       0
+       3       0       0       0
+
+  G vectors:
+  Elem 1 (1→2, truss): G = [0, 0, 0, 1, 2, 0]
+  Elem 2 (2→3, truss): G = [1, 2, 0, 0, 0, 0]
+
+── Step C: Assembled Global K (6×6) ──
+  K =
+        144.00       192.00      -144.00      -192.00         0.00         0.00
+        192.00       256.00      -192.00      -256.00         0.00         0.00
+       -144.00      -192.00       288.00         0.00      -144.00       192.00
+       -192.00      -256.00         0.00       512.00       192.00      -256.00
+          0.00         0.00      -144.00       192.00       144.00      -192.00
+          0.00         0.00       192.00      -256.00      -192.00       256.00
+
+  K symmetry check: max|K − Kᵀ| = 0.00e+00
+
+  Load vector F:
+    F[0] (Node 1 UX) =       0.0000
+    F[1] (Node 1 UY) =       0.0000
+    F[2] (Node 2 UX) =       0.0000
+    F[3] (Node 2 UY) =     -12.0000
+    F[4] (Node 3 UX) =       0.0000
+    F[5] (Node 3 UY) =       0.0000
+
+── Step D: Solve K·D = F ──
+  Residual ||K_ff·D_f − F_f|| = 0.0000e+00
+
+  Nodal displacements:
+    Node          ux (m)          uy (m)        rz (rad)
+       1    0.000000e+00    0.000000e+00    0.000000e+00
+       2    0.000000e+00   -2.343750e-02    0.000000e+00
+       3    0.000000e+00    0.000000e+00    0.000000e+00
+
+── Step E: Member End Forces ──
+    Elem   Type         N_i         V_i         M_i         N_j         V_j         M_j
+       1  truss      7.5000      0.0000      0.0000     -7.5000      0.0000      0.0000
+       2  truss      7.5000      0.0000      0.0000     -7.5000      0.0000      0.0000
+
+── Step F: Support Reactions ──
+    Node       Rx (kN)       Ry (kN)     Mz (kN·m)
+       1        4.5000        6.0000        0.0000
+       3       -4.5000        6.0000        0.0000
+  Max equilibrium residual at free nodes: 1.7764e-15
+  Global: ΣFx = 0.0000, ΣFy = 0.0000
+
+── Step G: Storage Report ──
+  Dense:  36 elements (6×6)
+  Banded: 24 elements (hbw = 3), savings = 33%
+  Note: bandwidth depends on node numbering order.
+
+======================================================================
+  Analysis complete.
+======================================================================
