@@ -171,6 +171,16 @@ python -m pytest tests/test_all.py -v   # 45 tests
 
 ## Test Suite (45 tests)
 
+### Q3(c) Updated Test Case
+
+Run:
+python run_q3c_vertical_frame_case.py
+
+This case demonstrates:
+- disconnected but supported substructures
+- block-diagonal stiffness behavior
+- warning + successful solution
+
 - **22 unit tests**: geometry, frame/truss stiffness, releases, FEF
 - **9 interface tests**: DOF numbering, assembly, validation
 - **14 regression tests**: portal frame (A2), cantilever, SS beam, truss, mechanism, hinge+load
