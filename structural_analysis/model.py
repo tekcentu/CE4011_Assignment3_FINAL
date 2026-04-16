@@ -46,6 +46,8 @@ class Material:
     E: float   # modulus of elasticity (kN/m²)
     A: float   # cross-sectional area (m²)
     I: float   # moment of inertia (m⁴)
+    alpha: float = 0.0  # thermal expansion coefficient (1/°C)
+    depth: float | None = None  # section depth (m), optional (used for frame thermal gradient)
 
 
 # ── Supports ───────────────────────────────────────────────────
@@ -101,6 +103,23 @@ class PointLoad:
 MemberLoad = UniformDistributedLoad | PointLoad
 
 
+@dataclass(frozen=True)
+class TrussTemperatureLoad:
+    """Uniform temperature change applied to a truss element."""
+
+    element_id: int
+    delta_t: float
+
+
+@dataclass(frozen=True)
+class FrameTemperatureLoad:
+    """Top/bottom temperature definition for a frame element."""
+
+    element_id: int
+    t_top: float
+    t_bottom: float
+
+
 # ── Structural Model ──────────────────────────────────────────
 
 
@@ -118,6 +137,8 @@ class StructuralModel:
     elements: list = field(default_factory=list)        # list[Element2D]
     supports: dict[int, Support] = field(default_factory=dict)
     nodal_loads: list[NodalLoad] = field(default_factory=list)
+    truss_temperature_loads: list[TrussTemperatureLoad] = field(default_factory=list)
+    frame_temperature_loads: list[FrameTemperatureLoad] = field(default_factory=list)
 
     # ── convenience helpers ──
 

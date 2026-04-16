@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from .model import (
     StructuralModel, Node, Material, Support, NodalLoad,
-    UniformDistributedLoad, PointLoad,
+    UniformDistributedLoad, PointLoad, TrussTemperatureLoad, FrameTemperatureLoad,
 )
 from .element import FrameElement2D, TrussElement2D
 
@@ -70,7 +70,11 @@ def read_input_file(filepath: str) -> StructuralModel:
                 parts = lines[i].split("#")[0].split()
                 mid = int(parts[0])
                 A_val, I_val, E_val = float(parts[1]), float(parts[2]), float(parts[3])
-                model.materials[mid] = Material(mid, E_val, A_val, I_val)
+                alpha_val = float(parts[4]) if len(parts) > 4 else 0.0
+                depth_val = float(parts[5]) if len(parts) > 5 else None
+                model.materials[mid] = Material(
+                    mid, E_val, A_val, I_val, alpha=alpha_val, depth=depth_val
+                )
 
         elif keyword == "ELEMENTS":
             count = int(tokens[1])
@@ -101,16 +105,23 @@ def read_input_file(filepath: str) -> StructuralModel:
                         release_i = True
                         release_j = True
 
+                ex_i = ey_i = ex_j = ey_j = 0.0
+                if len(parts) >= 10:
+                    ex_i, ey_i, ex_j, ey_j = (
+                        float(parts[6]), float(parts[7]), float(parts[8]), float(parts[9])
+                    )
+
                 if etype == "TRUSS":
                     elem = TrussElement2D(
                         id=eid, node_i=sn, node_j=en,
-                        E=mat.E, A=mat.A,
+                        E=mat.E, A=mat.A, alpha=mat.alpha,
                     )
                 else:
                     elem = FrameElement2D(
                         id=eid, node_i=sn, node_j=en,
-                        E=mat.E, A=mat.A, I=mat.I,
+                        E=mat.E, A=mat.A, I=mat.I, alpha=mat.alpha, depth=mat.depth,
                         release_i=release_i, release_j=release_j,
+                        ex_i=ex_i, ey_i=ey_i, ex_j=ex_j, ey_j=ey_j,
                     )
                 model.elements.append(elem)
 
@@ -168,6 +179,32 @@ def read_input_file(filepath: str) -> StructuralModel:
                     if elem.id == eid:
                         elem.member_loads.append(UniformDistributedLoad(wy=wy))
                         break
+
+        elif keyword == "TRUSS_TEMPERATURE_LOADS":
+            count = int(tokens[1])
+            for _ in range(count):
+                i += 1
+                while i < len(lines) and (not lines[i] or lines[i].startswith("#")):
+                    i += 1
+                parts = lines[i].split("#")[0].split()
+                model.truss_temperature_loads.append(
+                    TrussTemperatureLoad(element_id=int(parts[0]), delta_t=float(parts[1]))
+                )
+
+        elif keyword == "FRAME_TEMPERATURE_LOADS":
+            count = int(tokens[1])
+            for _ in range(count):
+                i += 1
+                while i < len(lines) and (not lines[i] or lines[i].startswith("#")):
+                    i += 1
+                parts = lines[i].split("#")[0].split()
+                model.frame_temperature_loads.append(
+                    FrameTemperatureLoad(
+                        element_id=int(parts[0]),
+                        t_top=float(parts[1]),
+                        t_bottom=float(parts[2]),
+                    )
+                )
 
         i += 1
 

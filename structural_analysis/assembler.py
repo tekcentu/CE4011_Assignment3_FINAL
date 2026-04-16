@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from .element import Element2D, FrameElement2D
-from .model import StructuralModel
+from .model import FrameTemperatureLoad, StructuralModel, TrussTemperatureLoad
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -300,9 +300,38 @@ def validate_model(model: StructuralModel, dofs: DofManager) -> list[str]:
             raise ValueError(f"Element {elem.id} has non-positive A or E.")
         if isinstance(elem, FrameElement2D) and elem.I <= 0:
             raise ValueError(f"Frame element {elem.id} has non-positive I.")
+        if isinstance(elem, FrameElement2D):
+            for val in (elem.ex_i, elem.ey_i, elem.ex_j, elem.ey_j):
+                if not isinstance(val, (int, float)):
+                    raise ValueError(f"Frame element {elem.id} has non-numeric rigid offsets.")
         elem.length_cos_sin(model.nodes)  # raises if zero-length
         incidence[elem.node_i] += 1
         incidence[elem.node_j] += 1
+
+    elem_by_id = {e.id: e for e in model.elements}
+    for load in model.truss_temperature_loads:
+        if not isinstance(load.delta_t, (int, float)):
+            raise ValueError(f"Truss temperature load on element {load.element_id} has non-numeric delta_t.")
+        if load.element_id not in elem_by_id:
+            raise ValueError(f"Truss temperature load references undefined element {load.element_id}.")
+        target = elem_by_id[load.element_id]
+        if target.kind != "truss":
+            raise ValueError(f"Truss temperature load must target a truss element, got element {target.id} ({target.kind}).")
+        if target.A <= 0:
+            raise ValueError(f"Truss element {target.id} must have positive area for thermal load.")
+
+    for load in model.frame_temperature_loads:
+        if not isinstance(load.t_top, (int, float)) or not isinstance(load.t_bottom, (int, float)):
+            raise ValueError(f"Frame temperature load on element {load.element_id} has non-numeric values.")
+        if load.element_id not in elem_by_id:
+            raise ValueError(f"Frame temperature load references undefined element {load.element_id}.")
+        target = elem_by_id[load.element_id]
+        if target.kind != "frame":
+            raise ValueError(f"Frame temperature load must target a frame element, got element {target.id} ({target.kind}).")
+        if target.I <= 0:
+            raise ValueError(f"Frame element {target.id} must have positive inertia for thermal load.")
+        if target.depth is None or target.depth <= 0:
+            raise ValueError(f"Frame element {target.id} needs positive depth for frame temperature gradient load.")
 
     # Isolated nodes
     isolated = [nid for nid in model.node_ids if incidence[nid] == 0]
@@ -411,5 +440,30 @@ def assemble_global_system(
             "mapping": mapping,
             "L": L, "c": c, "s": s,
         }
+
+    # Thermal element loads (assembled into RHS only)
+    elem_by_id = {e.id: e for e in model.elements}
+
+    for load in model.truss_temperature_loads:
+        elem = elem_by_id[load.element_id]
+        p_local = elem.local_thermal_load(load, alpha=elem.alpha)
+        R = elem.transformation_matrix(model.nodes)
+        p_global = R.T @ p_local
+        mapping = dofs.element_dof_map(elem)
+        for a, I in enumerate(mapping):
+            if I is not None:
+                F[I] += p_global[a]
+
+    for load in model.frame_temperature_loads:
+        elem = elem_by_id[load.element_id]
+        p_local = elem.local_thermal_load(load, depth=elem.depth, alpha=elem.alpha)
+        T = elem.rigid_offset_matrix()
+        p_local_mod = T @ p_local
+        R = elem.transformation_matrix(model.nodes)
+        p_global = R.T @ p_local_mod
+        mapping = dofs.element_dof_map(elem)
+        for a, I in enumerate(mapping):
+            if I is not None:
+                F[I] += p_global[a]
 
     return K, F, dofs, warnings, elem_data

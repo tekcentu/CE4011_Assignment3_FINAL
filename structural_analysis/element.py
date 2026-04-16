@@ -18,7 +18,13 @@ During force recovery: ``q = k · d − p``.
 from __future__ import annotations
 from dataclasses import dataclass, field
 import numpy as np
-from .model import MemberLoad, PointLoad, UniformDistributedLoad
+from .model import (
+    FrameTemperatureLoad,
+    MemberLoad,
+    PointLoad,
+    TrussTemperatureLoad,
+    UniformDistributedLoad,
+)
 
 
 def _length_cos_sin(ni, nj) -> tuple[float, float, float]:
@@ -80,6 +86,8 @@ class Element2D:
     node_j: int
     E: float
     A: float
+    alpha: float = 0.0
+    depth: float | None = None
     member_loads: list[MemberLoad] = field(default_factory=list)
 
     @property
@@ -205,6 +213,10 @@ class FrameElement2D(Element2D):
     I: float = 0.0
     release_i: bool = False
     release_j: bool = False
+    ex_i: float = 0.0
+    ey_i: float = 0.0
+    ex_j: float = 0.0
+    ey_j: float = 0.0
 
     @property
     def kind(self) -> str:
@@ -286,6 +298,23 @@ class FrameElement2D(Element2D):
         if self.release_j: r.append(5)
         return r
 
+    def rigid_offset_matrix(self) -> np.ndarray:
+        """Return 6x6 rigid-end-offset transformation matrix T."""
+        T = np.eye(6)
+        T[2, 0] = self.ey_i
+        T[2, 1] = -self.ex_i
+        T[5, 3] = self.ey_j
+        T[5, 4] = -self.ex_j
+        return T
+
+    def local_thermal_load(self, load: FrameTemperatureLoad, depth: float, alpha: float) -> np.ndarray:
+        """Equivalent local nodal thermal load from through-depth gradient."""
+        if depth <= 0:
+            raise ValueError(f"Frame element {self.id}: section depth must be positive for thermal gradient.")
+        kappa = alpha * (float(load.t_top) - float(load.t_bottom)) / depth
+        m = self.E * self.I * kappa
+        return np.array([0.0, 0.0, m, 0.0, 0.0, -m])
+
     def assembly_local_indices(self) -> list[int | None]:
         """Mark released rotational DOFs as None (not assembled).
 
@@ -311,8 +340,11 @@ class FrameElement2D(Element2D):
             Tuple (k_condensed, p_condensed) — 6×6 and 6-element arrays
             with zeros at released DOF positions.
         """
-        k = self.raw_local_stiffness(nodes)
-        p = self.local_consistent_load(nodes)
+        k_raw = self.raw_local_stiffness(nodes)
+        p_raw = self.local_consistent_load(nodes)
+        T = self.rigid_offset_matrix()
+        k = T @ k_raw @ T.T
+        p = T @ p_raw
         released = self._released_dofs()
         if not released:
             return k, p
@@ -344,19 +376,26 @@ class FrameElement2D(Element2D):
             released DOFs and q_local = [N_i, V_i, M_i, N_j, V_j, M_j].
         """
         R = self.transformation_matrix(nodes)
-        d_from_global = R @ u_global_elem
-        k_full = self.raw_local_stiffness(nodes)
-        p_full = self.local_consistent_load(nodes)
+        d_master_from_global = R @ u_global_elem
+        k_full_raw = self.raw_local_stiffness(nodes)
+        p_full_raw = self.local_consistent_load(nodes)
+        T = self.rigid_offset_matrix()
+        k_full = T @ k_full_raw @ T.T
+        p_full = T @ p_full_raw
         released = self._released_dofs()
         if not released:
-            return d_from_global, k_full @ d_from_global - p_full
+            d_physical = T.T @ d_master_from_global
+            q_physical = k_full_raw @ d_physical - p_full_raw
+            return d_physical, q_physical
         retained = [i for i in range(6) if i not in released]
         kba = k_full[np.ix_(released, retained)]
         kbb = k_full[np.ix_(released, released)]
-        db = np.linalg.solve(kbb, p_full[released] - kba @ d_from_global[retained])
-        d_local = np.array(d_from_global, copy=True)
-        d_local[released] = db
-        return d_local, k_full @ d_local - p_full
+        db = np.linalg.solve(kbb, p_full[released] - kba @ d_master_from_global[retained])
+        d_master = np.array(d_master_from_global, copy=True)
+        d_master[released] = db
+        d_physical = T.T @ d_master
+        q_physical = k_full_raw @ d_physical - p_full_raw
+        return d_physical, q_physical
 
 
 @dataclass
@@ -399,3 +438,8 @@ class TrussElement2D(Element2D):
             [0, 1, None, 3, 4, None] — DOFs 2 and 5 suppressed.
         """
         return [0, 1, None, 3, 4, None]
+
+    def local_thermal_load(self, load: TrussTemperatureLoad, alpha: float) -> np.ndarray:
+        """Equivalent local nodal thermal load for uniform ΔT in truss."""
+        n = self.E * self.A * alpha * float(load.delta_t)
+        return np.array([-n, 0.0, 0.0, n, 0.0, 0.0])
