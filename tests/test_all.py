@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from structural_analysis.model import (
     StructuralModel, Node, Material, Support, NodalLoad,
     UniformDistributedLoad, PointLoad,
+    TrussTemperatureLoad, FrameTemperatureLoad,
 )
 from structural_analysis.element import (
     FrameElement2D, TrussElement2D, _length_cos_sin, _rotation_matrix_6x6,
@@ -764,6 +765,190 @@ class TestRTQ3eInternalHinge:
         total_ry = sum(r.reactions[nid].get("uy", 0) for nid in r.reactions)
         total_load = 10*5 + 15  # UDL on 5m + point load 15 kN
         assert abs(total_ry - total_load) < 0.01
+
+
+# ================================================================
+#  UT — Thermal load vector (unit tests)
+# ================================================================
+class TestUTTrussThermLoad:
+    """UT-1: Truss thermal equivalent nodal load vector."""
+
+    def _nodes(self):
+        return {1: Node(1, 0, 0), 2: Node(2, 5, 0)}
+
+    def test_axial_load_values(self):
+        """p[0] = -EA·α·ΔT, p[3] = +EA·α·ΔT, others zero."""
+        nodes = self._nodes()
+        elem = TrussElement2D(id=1, node_i=1, node_j=2, E=200000, A=0.02, alpha=1e-5)
+        elem.thermal_load = TrussTemperatureLoad(delta_T=100)
+        p = elem.local_consistent_load(nodes)
+        EA = 200000 * 0.02
+        expected = EA * 1e-5 * 100
+        assert_allclose(p[0], -expected, atol=1e-10)
+        assert_allclose(p[3], +expected, atol=1e-10)
+        assert_allclose(p[[1, 2, 4, 5]], 0.0, atol=1e-10)
+
+    def test_zero_alpha_gives_zero_load(self):
+        """alpha=0.0 default → p is all zeros (no thermal effect)."""
+        nodes = self._nodes()
+        elem = TrussElement2D(id=1, node_i=1, node_j=2, E=200000, A=0.02)
+        elem.thermal_load = TrussTemperatureLoad(delta_T=100)
+        p = elem.local_consistent_load(nodes)
+        assert_allclose(p, 0.0, atol=1e-10)
+
+    def test_no_thermal_load_gives_zero(self):
+        """thermal_load=None → p is all zeros."""
+        nodes = self._nodes()
+        elem = TrussElement2D(id=1, node_i=1, node_j=2, E=200000, A=0.02, alpha=1e-5)
+        assert elem.thermal_load is None
+        p = elem.local_consistent_load(nodes)
+        assert_allclose(p, 0.0, atol=1e-10)
+
+
+class TestUTFrameThermLoad:
+    """UT-2: Frame thermal equivalent nodal load vector."""
+
+    def _nodes(self):
+        return {1: Node(1, 0, 0), 2: Node(2, 5, 0)}
+
+    def _elem(self, **kw):
+        defaults = dict(id=1, node_i=1, node_j=2, E=200000, A=0.02, I=0.0004, alpha=1e-5)
+        defaults.update(kw)
+        return FrameElement2D(**defaults)
+
+    def test_gradient_moments(self):
+        """t_top=+20, t_bottom=-20 → dT_avg=0, moments only at DOFs 2 and 5."""
+        nodes = self._nodes()
+        elem = self._elem(depth=0.4)
+        elem.thermal_load = FrameTemperatureLoad(t_top=20, t_bottom=-20)
+        p = elem.local_consistent_load(nodes)
+        dT_grad = (20 - (-20)) / 0.4  # = 100 /m
+        M = 200000 * 0.0004 * 1e-5 * dT_grad
+        # Axial terms zero (dT_avg = 0)
+        assert_allclose(p[0], 0.0, atol=1e-10)
+        assert_allclose(p[3], 0.0, atol=1e-10)
+        # Moments
+        assert_allclose(p[2], -M, atol=1e-10)
+        assert_allclose(p[5], +M, atol=1e-10)
+
+    def test_zero_depth_suppresses_moments(self):
+        """depth=0.0 (default) → no gradient moments, only axial if avg≠0."""
+        nodes = self._nodes()
+        elem = self._elem()   # depth defaults to 0.0
+        elem.thermal_load = FrameTemperatureLoad(t_top=20, t_bottom=-20)
+        p = elem.local_consistent_load(nodes)
+        assert_allclose(p[2], 0.0, atol=1e-10)
+        assert_allclose(p[5], 0.0, atol=1e-10)
+
+    def test_uniform_thermal_axial_only(self):
+        """t_top=t_bottom=50 → pure axial, no moments."""
+        nodes = self._nodes()
+        elem = self._elem(depth=0.4)
+        elem.thermal_load = FrameTemperatureLoad(t_top=50, t_bottom=50)
+        p = elem.local_consistent_load(nodes)
+        EA = 200000 * 0.02
+        expected = EA * 1e-5 * 50
+        assert_allclose(p[0], -expected, atol=1e-10)
+        assert_allclose(p[3], +expected, atol=1e-10)
+        assert_allclose(p[2], 0.0, atol=1e-10)
+        assert_allclose(p[5], 0.0, atol=1e-10)
+
+
+# ================================================================
+#  IT — Thermal full analysis (IT-1)
+# ================================================================
+class TestITUniformThermal:
+    """IT-1: Simply-supported beam under uniform thermal — free end expands."""
+
+    def test_thermal_elongation(self):
+        """Pin-roller beam: ux at roller = alpha * dT * L (free expansion)."""
+        L, alpha, dT = 5.0, 1e-5, 100.0
+        E, A, I = 200000.0, 0.02, 0.08
+        m = StructuralModel(title="Thermal elongation")
+        m.nodes = {1: Node(1, 0, 0), 2: Node(2, L, 0)}
+        m.materials = {1: Material(1, E, A, I, alpha)}
+        elem = FrameElement2D(id=1, node_i=1, node_j=2, E=E, A=A, I=I, alpha=alpha)
+        elem.thermal_load = FrameTemperatureLoad(t_top=dT, t_bottom=dT)
+        m.elements = [elem]
+        # Pin at node 1 (ux, uy restrained); roller at node 2 (uy restrained only)
+        m.supports = {1: Support(1, True, True, False), 2: Support(2, False, True, False)}
+        r = run_analysis(m, verbose=False)
+        assert r.status == "ok"
+        dofs = DofManager.from_model(m)
+        ux2_idx = dofs.index(2, "ux")
+        assert ux2_idx is not None
+        assert_allclose(r.D[ux2_idx], alpha * dT * L, rtol=1e-6)
+
+    def test_zero_alpha_no_deformation(self):
+        """alpha=0 → no thermal effect, zero displacements."""
+        L = 5.0
+        E, A, I = 200000.0, 0.02, 0.08
+        m = StructuralModel(title="No thermal")
+        m.nodes = {1: Node(1, 0, 0), 2: Node(2, L, 0)}
+        m.materials = {1: Material(1, E, A, I, 0.0)}
+        elem = FrameElement2D(id=1, node_i=1, node_j=2, E=E, A=A, I=I, alpha=0.0)
+        elem.thermal_load = FrameTemperatureLoad(t_top=100, t_bottom=100)
+        m.elements = [elem]
+        m.supports = {1: Support(1, True, True, False), 2: Support(2, False, True, False)}
+        r = run_analysis(m, verbose=False)
+        assert r.status == "ok"
+        assert_allclose(r.D, 0.0, atol=1e-10)
+
+
+# ================================================================
+#  IT — Support settlement full analysis (IT-2)
+# ================================================================
+class TestITSupportSettlement:
+    """IT-2: Propped cantilever with prescribed settlement at roller."""
+
+    def _propped_cantilever(self, uy_settle: float) -> StructuralModel:
+        """Fixed-roller propped cantilever, L=6m."""
+        L = 6.0
+        E, A, I = 200000.0, 0.02, 0.08
+        m = StructuralModel(title="Settlement test")
+        m.nodes = {1: Node(1, 0, 0), 2: Node(2, L, 0)}
+        m.materials = {1: Material(1, E, A, I)}
+        m.elements = [FrameElement2D(id=1, node_i=1, node_j=2, E=E, A=A, I=I)]
+        m.supports = {
+            1: Support(1, True, True, True),
+            2: Support(2, False, True, False, uy_settle=uy_settle),
+        }
+        return m
+
+    def test_settled_dof_equals_prescribed(self):
+        """D at the settled DOF must equal the prescribed settlement value."""
+        delta = -0.01
+        m = self._propped_cantilever(uy_settle=delta)
+        r = run_analysis(m, verbose=False)
+        assert r.status == "ok"
+        dofs = DofManager.from_model(m)
+        uy2_idx = dofs.index(2, "uy")
+        assert uy2_idx is not None
+        assert_allclose(r.D[uy2_idx], delta, atol=1e-12)
+
+    def test_zero_settlement_matches_no_settlement(self):
+        """uy_settle=0 gives same result as no settlement keyword."""
+        m_settle = self._propped_cantilever(uy_settle=0.0)
+        m_nosettle = self._propped_cantilever(uy_settle=0.0)
+        r_s = run_analysis(m_settle, verbose=False)
+        r_n = run_analysis(m_nosettle, verbose=False)
+        assert r_s.status == "ok"
+        assert r_n.status == "ok"
+        assert_allclose(r_s.D, r_n.D, atol=1e-10)
+
+    def test_settlement_reaction_analytical(self):
+        """Propped cantilever: roller reaction = 3EI/L³ × |delta|."""
+        L = 6.0
+        E, A, I = 200000.0, 0.02, 0.08
+        delta = -0.01
+        m = self._propped_cantilever(uy_settle=delta)
+        r = run_analysis(m, verbose=False)
+        assert r.status == "ok"
+        # Analytical roller reaction for propped cantilever settlement
+        k_roller = 3.0 * E * I / L**3
+        expected_ry_roller = k_roller * abs(delta)  # upward (positive)
+        actual_ry_roller = abs(r.reactions[2].get("uy", 0))
+        assert_allclose(actual_ry_roller, expected_ry_roller, rtol=1e-4)
 
 
 if __name__ == "__main__":

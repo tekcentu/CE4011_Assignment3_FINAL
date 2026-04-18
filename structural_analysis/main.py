@@ -10,7 +10,7 @@ import numpy as np
 from .model import StructuralModel, AnalysisResult
 from .element import FrameElement2D, TrussElement2D
 from .file_io import read_input_file
-from .assembler import assemble_global_system, DofManager
+from .assembler import assemble_global_system, DofManager, build_prescribed_displacement_vector
 from .solver import solve_system
 from .postprocessor import compute_member_forces, compute_reactions, equilibrium_check
 
@@ -111,7 +111,8 @@ def run_analysis(model: StructuralModel, verbose: bool = True) -> AnalysisResult
 
     # ── Step D: Solve ──
     log("\n── Step D: Solve K·D = F ──")
-    D, residual, solve_warnings = solve_system(K, F, dofs)
+    D_pre = build_prescribed_displacement_vector(model, dofs)
+    D, residual, solve_warnings = solve_system(K, F, dofs, D_prescribed=D_pre)
 
     for w in solve_warnings:
         log(f"  {w}")
