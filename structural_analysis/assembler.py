@@ -413,3 +413,27 @@ def assemble_global_system(
         }
 
     return K, F, dofs, warnings, elem_data
+
+
+def build_prescribed_displacement_vector(
+    model: StructuralModel, dofs: DofManager
+) -> np.ndarray:
+    """Return D_prescribed: zeros everywhere, settlement values at restrained DOFs.
+
+    Args:
+        model: The structural model containing support settlement data.
+        dofs: The DOF manager for index lookup.
+
+    Returns:
+        ndarray (n_total,) — zero except at DOFs with non-zero settlements.
+    """
+    D_pre = np.zeros(dofs.n_total)
+    for sup in model.supports.values():
+        for dof_name, val in [("ux", sup.ux_settle),
+                               ("uy", sup.uy_settle),
+                               ("rz", sup.rz_settle)]:
+            if val != 0.0:
+                idx = dofs.index(sup.node_id, dof_name)
+                if idx is not None:
+                    D_pre[idx] = val
+    return D_pre

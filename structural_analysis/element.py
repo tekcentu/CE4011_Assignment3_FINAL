@@ -18,7 +18,7 @@ During force recovery: ``q = k · d − p``.
 from __future__ import annotations
 from dataclasses import dataclass, field
 import numpy as np
-from .model import MemberLoad, PointLoad, UniformDistributedLoad
+from .model import MemberLoad, PointLoad, UniformDistributedLoad, TrussTemperatureLoad, FrameTemperatureLoad
 
 
 def _length_cos_sin(ni, nj) -> tuple[float, float, float]:
@@ -81,6 +81,8 @@ class Element2D:
     E: float
     A: float
     member_loads: list[MemberLoad] = field(default_factory=list)
+    alpha: float = field(default=0.0)
+    thermal_load: TrussTemperatureLoad | FrameTemperatureLoad | None = field(default=None)
 
     @property
     def kind(self) -> str:
@@ -205,6 +207,7 @@ class FrameElement2D(Element2D):
     I: float = 0.0
     release_i: bool = False
     release_j: bool = False
+    depth: float = field(default=0.0)
 
     @property
     def kind(self) -> str:
@@ -273,6 +276,18 @@ class FrameElement2D(Element2D):
                 p += np.array([0, load.py*n1, load.py*n2, 0, load.py*n3, load.py*n4])
             else:
                 raise TypeError(f"Unsupported load on element {self.id}: {type(load)}")
+        if self.thermal_load is not None and self.alpha != 0.0:
+            EA = self.E * self.A
+            EI = self.E * self.I
+            tl = self.thermal_load
+            dT_avg = (tl.t_top + tl.t_bottom) / 2.0
+            p[0] += -EA * self.alpha * dT_avg
+            p[3] += +EA * self.alpha * dT_avg
+            if self.depth > 0.0:
+                dT_grad = (tl.t_top - tl.t_bottom) / self.depth
+                M = EI * self.alpha * dT_grad
+                p[2] += -M
+                p[5] += +M
         return p
 
     def _released_dofs(self) -> list[int]:
@@ -391,6 +406,23 @@ class TrussElement2D(Element2D):
         k[0,0] = EA_L; k[0,3] = -EA_L
         k[3,0] = -EA_L; k[3,3] = EA_L
         return k
+
+    def local_consistent_load(self, nodes: dict) -> np.ndarray:
+        """Compute equivalent nodal forces from thermal loading only.
+
+        Args:
+            nodes: Dict mapping node IDs to Node objects.
+
+        Returns:
+            6-element numpy array — consistent load vector p.
+        """
+        p = np.zeros(6)
+        if self.thermal_load is not None and self.alpha != 0.0:
+            EA = self.E * self.A
+            dT = self.thermal_load.delta_T
+            p[0] = -EA * self.alpha * dT
+            p[3] = +EA * self.alpha * dT
+        return p
 
     def assembly_local_indices(self) -> list[int | None]:
         """Mark rotational DOFs as inactive for truss elements.

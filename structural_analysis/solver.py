@@ -21,22 +21,26 @@ def solve_system(
     K: np.ndarray,
     F: np.ndarray,
     dofs: DofManager,
+    D_prescribed: np.ndarray | None = None,
 ) -> tuple[np.ndarray, float, list[str]]:
-    """Solve the partitioned system K_ff · D_f = F_f.
+    """Solve the partitioned system K_ff · D_f = F_f − K_fr · D_r.
 
-    Extracts the free-free block of K, checks rank via SVD to detect
-    mechanisms, checks condition number, then solves and expands the
-    solution back to the full DOF vector.
+    Extracts the free-free block of K, applies prescribed restrained
+    displacements (support settlements) to modify the RHS, checks rank
+    via SVD to detect mechanisms, checks condition number, then solves
+    and expands the solution back to the full DOF vector.
 
     Args:
         K: Full global stiffness matrix, ndarray (n × n).
         F: Full global load vector, ndarray (n,).
         dofs: DofManager with free/restrained index lists.
+        D_prescribed: Optional ndarray (n,) with prescribed displacements
+            at restrained DOFs (support settlements). None means all zeros.
 
     Returns:
         Tuple (D, residual, warnings) where:
-            D: Full displacement vector, ndarray (n,). Restrained DOFs = 0.
-            residual: float — ||K_ff · D_f − F_f||.
+            D: Full displacement vector, ndarray (n,).
+            residual: float — ||K_ff · D_f − F_eff||.
             warnings: list[str] — any warnings or errors encountered.
     """
     warnings: list[str] = []
@@ -47,8 +51,19 @@ def solve_system(
         return np.zeros(n), 0.0, warnings
 
     free = dofs.free_indices
+    restrained = dofs.restrained_indices
     Kff = K[np.ix_(free, free)]
     Ff = F[free]
+
+    # Build D_r from prescribed settlements (or zeros)
+    Dr = np.zeros(len(restrained))
+    if D_prescribed is not None and len(restrained) > 0:
+        Dr = D_prescribed[restrained]
+
+    # Modify RHS for non-zero restrained DOFs
+    if len(restrained) > 0 and np.any(Dr != 0.0):
+        Kfr = K[np.ix_(free, restrained)]
+        Ff = Ff - Kfr @ Dr
 
     # ── SVD rank check ──
     try:
@@ -94,6 +109,8 @@ def solve_system(
     # Expand to full vector
     D = np.zeros(n)
     D[free] = Df
+    if len(restrained) > 0:
+        D[restrained] = Dr
 
     residual = float(np.linalg.norm(Kff @ Df - Ff))
     if residual > 1e-3:

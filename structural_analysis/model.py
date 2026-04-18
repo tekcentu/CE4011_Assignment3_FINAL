@@ -43,9 +43,10 @@ class Material:
     """
 
     id: int
-    E: float   # modulus of elasticity (kN/m²)
-    A: float   # cross-sectional area (m²)
-    I: float   # moment of inertia (m⁴)
+    E: float        # modulus of elasticity (kN/m²)
+    A: float        # cross-sectional area (m²)
+    I: float        # moment of inertia (m⁴)
+    alpha: float = 0.0  # coefficient of thermal expansion (1/°C)
 
 
 # ── Supports ───────────────────────────────────────────────────
@@ -62,6 +63,9 @@ class Support:
     ux: bool = False
     uy: bool = False
     rz: bool = False
+    ux_settle: float = 0.0  # prescribed displacement in x (m)
+    uy_settle: float = 0.0  # prescribed displacement in y (m)
+    rz_settle: float = 0.0  # prescribed rotation (rad)
 
 
 # ── Loads ──────────────────────────────────────────────────────
@@ -99,6 +103,21 @@ class PointLoad:
 
 
 MemberLoad = UniformDistributedLoad | PointLoad
+
+
+@dataclass(frozen=True)
+class TrussTemperatureLoad:
+    """Uniform temperature change applied to a truss element."""
+
+    delta_T: float  # temperature change (°C)
+
+
+@dataclass(frozen=True)
+class FrameTemperatureLoad:
+    """Through-depth temperature change applied to a frame element."""
+
+    t_top: float     # temp change at top fibre (°C)
+    t_bottom: float  # temp change at bottom fibre (°C)
 
 
 # ── Structural Model ──────────────────────────────────────────

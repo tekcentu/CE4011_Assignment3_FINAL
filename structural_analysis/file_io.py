@@ -10,6 +10,7 @@ from __future__ import annotations
 from .model import (
     StructuralModel, Node, Material, Support, NodalLoad,
     UniformDistributedLoad, PointLoad,
+    TrussTemperatureLoad, FrameTemperatureLoad,
 )
 from .element import FrameElement2D, TrussElement2D
 
@@ -70,7 +71,8 @@ def read_input_file(filepath: str) -> StructuralModel:
                 parts = lines[i].split("#")[0].split()
                 mid = int(parts[0])
                 A_val, I_val, E_val = float(parts[1]), float(parts[2]), float(parts[3])
-                model.materials[mid] = Material(mid, E_val, A_val, I_val)
+                alpha_val = float(parts[4]) if len(parts) > 4 else 0.0
+                model.materials[mid] = Material(mid, E_val, A_val, I_val, alpha_val)
 
         elif keyword == "ELEMENTS":
             count = int(tokens[1])
@@ -104,13 +106,14 @@ def read_input_file(filepath: str) -> StructuralModel:
                 if etype == "TRUSS":
                     elem = TrussElement2D(
                         id=eid, node_i=sn, node_j=en,
-                        E=mat.E, A=mat.A,
+                        E=mat.E, A=mat.A, alpha=mat.alpha,
                     )
                 else:
                     elem = FrameElement2D(
                         id=eid, node_i=sn, node_j=en,
                         E=mat.E, A=mat.A, I=mat.I,
                         release_i=release_i, release_j=release_j,
+                        alpha=mat.alpha,
                     )
                 model.elements.append(elem)
 
@@ -168,6 +171,50 @@ def read_input_file(filepath: str) -> StructuralModel:
                     if elem.id == eid:
                         elem.member_loads.append(UniformDistributedLoad(wy=wy))
                         break
+
+        elif keyword == "THERMAL_LOADS":
+            # Format: <elem_id> <delta_T>                      (truss or uniform frame)
+            #         <elem_id> <t_top> <t_bottom> [<depth>]   (frame gradient)
+            count = int(tokens[1])
+            for _ in range(count):
+                i += 1
+                while i < len(lines) and (not lines[i] or lines[i].startswith("#")):
+                    i += 1
+                parts = lines[i].split("#")[0].split()
+                eid = int(parts[0])
+                for elem in model.elements:
+                    if elem.id != eid:
+                        continue
+                    if isinstance(elem, TrussElement2D):
+                        elem.thermal_load = TrussTemperatureLoad(delta_T=float(parts[1]))
+                    elif isinstance(elem, FrameElement2D):
+                        if len(parts) == 2:
+                            dT = float(parts[1])
+                            elem.thermal_load = FrameTemperatureLoad(t_top=dT, t_bottom=dT)
+                        else:
+                            elem.thermal_load = FrameTemperatureLoad(
+                                t_top=float(parts[1]), t_bottom=float(parts[2]))
+                            if len(parts) > 3:
+                                elem.depth = float(parts[3])
+                    break
+
+        elif keyword == "SETTLEMENTS":
+            # Format: <node_id> <ux_settle> <uy_settle> <rz_settle>
+            count = int(tokens[1])
+            for _ in range(count):
+                i += 1
+                while i < len(lines) and (not lines[i] or lines[i].startswith("#")):
+                    i += 1
+                parts = lines[i].split("#")[0].split()
+                nid = int(parts[0])
+                ux_s = float(parts[1]) if len(parts) > 1 else 0.0
+                uy_s = float(parts[2]) if len(parts) > 2 else 0.0
+                rz_s = float(parts[3]) if len(parts) > 3 else 0.0
+                old = model.supports.get(nid, Support(nid))
+                model.supports[nid] = Support(
+                    nid, old.ux, old.uy, old.rz,
+                    ux_settle=ux_s, uy_settle=uy_s, rz_settle=rz_s,
+                )
 
         i += 1
 
